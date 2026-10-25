@@ -1,0 +1,1469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brain Explorer</title>
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --text: #1f2328;
+    --muted: #5f6670;
+    --border: #e2e0da;
+    --accent: #c2410c;
+    --stage-a: #ffffff;
+    --stage-b: #ebe7e1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181c;
+      --surface: #1f2228;
+      --text: #e8e6e3;
+      --muted: #9aa1ab;
+      --border: #30343b;
+      --accent: #fb923c;
+      --stage-a: #2a2e36;
+      --stage-b: #15171b;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 12px 20px;
+    align-items: center; justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  h1 { margin: 0; font-size: 1.35rem; }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 0.95rem; margin-left: 8px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .controls button {
+    font: inherit; font-size: 0.88rem; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    padding: 6px 12px; border-radius: 8px;
+  }
+  .controls button:hover { border-color: var(--accent); }
+  .controls button[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+  input[type="search"] {
+    font: inherit; font-size: 0.88rem; padding: 6px 12px; width: 220px; max-width: 100%;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text);
+  }
+
+  main {
+    display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px;
+    padding: 24px; max-width: 1400px; margin: 0 auto;
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; padding: 16px; }
+    header { padding: 12px 16px; }
+  }
+
+  #stage {
+    position: relative; overflow: hidden;
+    height: clamp(380px, 72vh, 720px);
+    border: 1px solid var(--border); border-radius: 14px;
+    background: #04060b;
+    touch-action: none;
+  }
+  /* On a phone the stage stays pinned to the top, so the info panel can be read beneath the brain */
+  @media (max-width: 900px) {
+    #stage { position: sticky; top: 0; z-index: 5; height: clamp(280px, 46vh, 460px); }
+  }
+  #stage canvas { display: block; }
+  .labels { position: absolute; inset: 0; }
+  .label3d {
+    font: 600 12px system-ui, sans-serif; color: #e6faff;
+    background: rgba(6, 10, 20, .75); padding: 2px 8px; border-radius: 999px;
+    border: 1px solid rgba(0, 212, 255, .45);
+    white-space: nowrap; pointer-events: none;
+  }
+  .hint {
+    position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+    font-size: 0.8rem; color: rgba(200, 230, 255, .5); pointer-events: none; white-space: nowrap;
+  }
+  #loading {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: rgba(200, 230, 255, .6); font-size: 0.95rem; text-align: center; padding: 16px;
+  }
+
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 10;
+    background: var(--text); color: var(--surface);
+    padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+    opacity: 0; transform: translate(-50%, calc(-100% - 14px)); transition: opacity .1s;
+    white-space: nowrap;
+  }
+
+  aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px;
+  }
+  #info { animation: none; position: relative; }
+  #info .close {
+    position: absolute; top: 12px; right: 12px;
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+    font-size: 1.2rem; line-height: 1; cursor: pointer;
+  }
+  #info .close:hover { color: var(--text); border-color: var(--accent); }
+  #info h2 { padding-right: 40px; }
+  #info.enter { animation: slideIn .35s ease-out; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .panel h2 { margin: 0 0 4px; font-size: 1.4rem; }
+  .chip {
+    display: inline-block; font-size: 0.75rem; font-weight: 600; letter-spacing: .02em;
+    padding: 2px 10px; border-radius: 999px; color: #1f2328;
+  }
+  .summary { font-size: 1.05rem; margin: 12px 0 4px; }
+  .panel h3 {
+    margin: 18px 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  }
+  .panel ul { margin: 0; padding-left: 20px; }
+  .panel li { margin: 2px 0; }
+  .panel p { margin: 0; }
+  .note {
+    margin-top: 14px; padding: 8px 12px; border-radius: 8px; font-size: 0.88rem;
+    background: var(--bg); color: var(--muted); border-left: 3px solid var(--accent);
+  }
+  .related { display: flex; flex-wrap: wrap; gap: 6px; }
+  .related button, .list button {
+    font: inherit; font-size: 0.85rem; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .related button:hover, .list button:hover { border-color: var(--accent); }
+  .welcome p + p { margin-top: 10px; }
+  .muted { color: var(--muted); }
+
+  .list h3:first-child { margin-top: 0; }
+  .list .items { display: flex; flex-wrap: wrap; gap: 6px; }
+  .list button .dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px;
+  }
+  .list button.current { border-color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧠 Brain Explorer <span>Click any region to learn what it does</span></h1>
+  <div class="controls">
+    <button id="btn-xray" aria-pressed="false" title="See through the outer brain">X-ray</button>
+    <button id="btn-explode" aria-pressed="false" title="Pull the parts apart">Explode</button>
+    <button id="btn-labels" aria-pressed="true">Labels</button>
+    <button id="btn-spin" aria-pressed="true">Spin</button>
+    <button id="btn-reset">Reset view</button>
+    <input type="search" id="search" placeholder="Search (e.g. memory, balance)" aria-label="Search brain regions">
+  </div>
+</header>
+
+<main>
+  <section id="stage" aria-label="Interactive 3D brain. Drag to rotate, scroll to zoom, click a region.">
+    <div id="loading">Loading the 3D brain…</div>
+    <div class="hint">Drag to rotate · Scroll to zoom · Click a region</div>
+  </section>
+
+  <aside>
+    <div class="panel" id="info" aria-live="polite"></div>
+    <div class="panel list" id="list"></div>
+  </aside>
+</main>
+
+<div id="tooltip"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.3/build/index.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { computeBoundsTree, acceleratedRaycast } from "three-mesh-bvh";
+
+// Bounding-volume trees keep hover and click fast on the high-detail cortex
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+// ------------------------------------------------------------------
+// Content
+// ------------------------------------------------------------------
+// Neon palette: each region glows in its own color
+const COLORS = {
+  frontal: "#00d4ff", parietal: "#00ff9d", temporal: "#ffb800", occipital: "#b84dff",
+  prefrontal: "#3d7bff", motor: "#ff3d6e", somatosensory: "#ff7a00",
+  broca: "#ff2fd6", wernicke: "#ff4f8b",
+  cerebellum: "#a6ff00", midbrain: "#00ffd0", pons: "#00e0b0", medulla: "#00ffea",
+  "corpus-callosum": "#e8f4ff", thalamus: "#ffe14d", hypothalamus: "#ff9f1c",
+  pituitary: "#00f0ff", "basal-ganglia": "#ff6b3d", hippocampus: "#ff4fd8", amygdala: "#ff2e4d",
+};
+
+const REGIONS = {
+  frontal: {
+    name: "Frontal Lobe", group: "Cerebral lobe",
+    summary: "The brain's command center for planning, decisions, movement and personality.",
+    functions: ["Planning, reasoning and decision-making", "Starting voluntary movement (motor cortex)", "Producing speech (Broca's area)", "Impulse control and personality"],
+    ifDamaged: "Changes in personality, poor judgment, trouble planning, or weakness on the opposite side of the body.",
+    funFact: "It is the last part of the brain to fully mature, often not until your mid-20s.",
+    related: ["prefrontal", "motor", "broca"],
+  },
+  parietal: {
+    name: "Parietal Lobe", group: "Cerebral lobe",
+    summary: "Combines touch, body position and spatial information into a sense of where things are.",
+    functions: ["Processing touch, pain and temperature", "Knowing where your body parts are (proprioception)", "Spatial awareness and navigation", "Supporting reading and math"],
+    ifDamaged: "Trouble with spatial tasks. Damage on the right side can cause 'neglect', where a person ignores the left side of space.",
+    funFact: "You can touch your nose with your eyes closed thanks to the body map kept here.",
+    related: ["somatosensory", "occipital"],
+  },
+  temporal: {
+    name: "Temporal Lobe", group: "Cerebral lobe",
+    summary: "Handles hearing, understanding language, and memory.",
+    functions: ["Processing sound (auditory cortex)", "Understanding language (Wernicke's area)", "Recognizing faces and objects", "Forming memories with the hippocampus"],
+    ifDamaged: "Difficulty understanding speech, memory problems, or trouble recognizing faces (prosopagnosia).",
+    funFact: "Seizures in the temporal lobe can trigger intense feelings of déjà vu.",
+    related: ["wernicke", "hippocampus", "amygdala"],
+  },
+  occipital: {
+    name: "Occipital Lobe", group: "Cerebral lobe",
+    summary: "The brain's visual processing center.",
+    functions: ["Primary visual cortex: receives signals from the eyes", "Detecting color, shape and motion", "Judging depth and distance"],
+    ifDamaged: "Blind spots or loss of part of the visual field, even when the eyes are healthy.",
+    funFact: "Your eyes are at the front of your head, but vision is processed at the very back.",
+    related: ["thalamus", "parietal", "temporal"],
+  },
+  prefrontal: {
+    name: "Prefrontal Cortex", short: "Prefrontal", group: "Cortical area",
+    summary: "Executive control: setting goals, staying focused, and self-control.",
+    functions: ["Working memory (holding information in mind)", "Planning ahead and decision-making", "Regulating emotions", "Social behavior"],
+    ifDamaged: "Impulsive behavior, poor judgment, or loss of motivation.",
+    funFact: "In 1848 Phineas Gage survived an iron rod through this area, and his personality reportedly changed dramatically.",
+    related: ["frontal", "amygdala"],
+  },
+  motor: {
+    name: "Primary Motor Cortex", short: "Motor", group: "Cortical area",
+    summary: "Sends the commands that move your muscles.",
+    functions: ["Starting voluntary movements", "Each strip of it controls a body part (the 'motor homunculus')", "The left side controls the right side of the body, and vice versa"],
+    ifDamaged: "Weakness or paralysis on the opposite side of the body, as in many strokes.",
+    funFact: "Your hands and face get far more of this strip than your back or legs.",
+    related: ["somatosensory", "cerebellum", "basal-ganglia"],
+  },
+  somatosensory: {
+    name: "Somatosensory Cortex", short: "Sensory", group: "Cortical area",
+    summary: "Receives touch, pain, temperature and body-position signals.",
+    functions: ["Feeling touch, pressure and vibration", "Sensing pain and temperature", "Keeping a map of the body (the 'sensory homunculus')"],
+    ifDamaged: "Numbness or reduced sensation on the opposite side of the body.",
+    funFact: "Lips and fingertips have the largest areas, which is why they are so sensitive.",
+    related: ["motor", "parietal", "thalamus"],
+  },
+  broca: {
+    name: "Broca's Area", short: "Broca's", group: "Cortical area",
+    summary: "Produces speech. Usually found only in the left hemisphere.",
+    functions: ["Forming words and sentences", "Planning the mouth movements for speech", "Processing grammar"],
+    ifDamaged: "Broca's aphasia: the person understands speech but talks slowly, in short, effortful phrases.",
+    funFact: "Named after Paul Broca, who in 1861 studied a patient who could only say the word 'tan'.",
+    related: ["wernicke", "motor", "frontal"],
+  },
+  wernicke: {
+    name: "Wernicke's Area", short: "Wernicke's", group: "Cortical area",
+    summary: "Understands spoken and written language. Usually found only in the left hemisphere.",
+    functions: ["Understanding the meaning of words", "Comprehending speech and reading", "Choosing the right words when speaking"],
+    ifDamaged: "Wernicke's aphasia: fluent speech that lacks meaning, and difficulty understanding others.",
+    funFact: "It is linked to Broca's area by a bundle of fibers called the arcuate fasciculus.",
+    related: ["broca", "temporal"],
+  },
+  cerebellum: {
+    name: "Cerebellum", group: "Hindbrain",
+    summary: "Coordinates movement, balance and timing.",
+    functions: ["Balance and posture", "Smooth, precise movements", "Learning motor skills like riding a bike", "Timing and rhythm"],
+    ifDamaged: "Clumsy, unsteady walking (ataxia), shaky reaching movements, and slurred speech.",
+    funFact: "It is only about 10% of the brain's volume but holds more than half of its neurons.",
+    related: ["pons", "motor", "basal-ganglia"],
+  },
+  "corpus-callosum": {
+    name: "Corpus Callosum", group: "White matter", deep: true,
+    summary: "The bridge between the left and right hemispheres.",
+    functions: ["About 200 million nerve fibers", "Shares information between the two hemispheres", "Coordinates movements on both sides of the body"],
+    ifDamaged: "In 'split-brain' patients, where it was cut to treat epilepsy, each hemisphere can act somewhat independently.",
+    funFact: "Split-brain research helped earn Roger Sperry the 1981 Nobel Prize.",
+    related: ["frontal", "parietal"],
+  },
+  thalamus: {
+    name: "Thalamus", group: "Diencephalon", deep: true,
+    summary: "The brain's relay station.",
+    functions: ["Relays sensory signals to the cortex", "Regulates sleep and alertness", "Helps focus attention", "Relays movement signals"],
+    ifDamaged: "Sensory loss, chronic pain, or problems with sleep and consciousness.",
+    funFact: "Smell is the only sense that doesn't pass through the thalamus first on its way to the cortex.",
+    related: ["hypothalamus", "somatosensory", "occipital"],
+  },
+  hypothalamus: {
+    name: "Hypothalamus", group: "Diencephalon", deep: true,
+    summary: "Keeps the body in balance (homeostasis).",
+    functions: ["Body temperature", "Hunger and thirst", "Sleep-wake cycles", "Controls the pituitary gland's hormones", "Triggers the fight-or-flight response"],
+    ifDamaged: "Problems with body temperature, appetite, sleep, or hormone levels.",
+    funFact: "It weighs only about 4 grams, yet it controls many of the body's basic drives.",
+    related: ["pituitary", "thalamus", "amygdala"],
+  },
+  pituitary: {
+    name: "Pituitary Gland", short: "Pituitary", group: "Endocrine gland", deep: true,
+    summary: "The 'master gland' that releases hormones controlling other glands.",
+    functions: ["Growth hormone", "Controls the thyroid and adrenal glands", "Reproductive hormones", "Water balance (ADH) and releasing oxytocin"],
+    ifDamaged: "Growth problems and a wide range of hormone imbalances.",
+    funFact: "It is only about the size of a pea.",
+    related: ["hypothalamus"],
+  },
+  hippocampus: {
+    name: "Hippocampus", group: "Limbic system", deep: true,
+    summary: "Forms new memories and helps you find your way around.",
+    functions: ["Turning short-term memories into long-term ones", "Spatial memory and navigation", "Linking memories to places and context"],
+    ifDamaged: "Difficulty forming new memories (anterograde amnesia), as in the famous patient H.M.",
+    funFact: "London taxi drivers, who memorize thousands of streets, have enlarged rear hippocampi.",
+    related: ["amygdala", "temporal", "prefrontal"],
+  },
+  amygdala: {
+    name: "Amygdala", group: "Limbic system", deep: true,
+    summary: "Processes emotions, especially fear.",
+    functions: ["Detecting threats", "Triggering fear responses", "Making emotional memories stronger", "Reading facial expressions"],
+    ifDamaged: "Reduced fear and difficulty recognizing fear in other people's faces.",
+    funFact: "Its name comes from the Greek word for 'almond', because of its shape.",
+    related: ["hippocampus", "hypothalamus", "prefrontal"],
+  },
+  "basal-ganglia": {
+    name: "Basal Ganglia", group: "Deep nuclei", deep: true,
+    summary: "Helps start, stop and smooth out movements, and builds habits.",
+    functions: ["Choosing which movements to make", "Forming habits", "Reward and motivation (dopamine)"],
+    ifDamaged: "Movement disorders such as Parkinson's disease and Huntington's disease.",
+    funFact: "Once a skill like typing becomes automatic, the basal ganglia are doing much of the work.",
+    related: ["motor", "midbrain", "thalamus"],
+  },
+  midbrain: {
+    name: "Midbrain", group: "Brainstem", deep: true,
+    summary: "The top of the brainstem. Controls eye movements and quick reflexes to sights and sounds.",
+    functions: ["Eye movement", "Turning toward a sudden sight or sound", "Producing dopamine (substantia nigra)", "Alertness"],
+    ifDamaged: "Eye movement problems. Losing the dopamine neurons here causes Parkinson's disease.",
+    funFact: "The substantia nigra means 'black substance', because its neurons contain a dark pigment.",
+    related: ["pons", "basal-ganglia", "thalamus"],
+  },
+  pons: {
+    name: "Pons", group: "Brainstem",
+    summary: "A bridge linking the cortex to the cerebellum. It also helps regulate breathing and sleep.",
+    functions: ["Relays signals from the cortex to the cerebellum", "Regulates breathing rhythm", "REM sleep and dreaming", "Facial sensation, chewing and facial movement"],
+    ifDamaged: "Damage here can cause 'locked-in syndrome': fully aware but unable to move except the eyes.",
+    funFact: "'Pons' is Latin for 'bridge'.",
+    related: ["cerebellum", "medulla", "midbrain"],
+  },
+  medulla: {
+    name: "Medulla Oblongata", short: "Medulla", group: "Brainstem",
+    summary: "The bottom of the brainstem. Controls automatic, vital functions.",
+    functions: ["Breathing", "Heart rate and blood pressure", "Reflexes: swallowing, coughing, sneezing, vomiting"],
+    ifDamaged: "Often life-threatening, because breathing and heart rate depend on it.",
+    funFact: "Many nerve pathways cross over here, which is why the left brain controls the right body.",
+    related: ["pons", "midbrain"],
+  },
+};
+
+// ------------------------------------------------------------------
+// Scene
+// ------------------------------------------------------------------
+const stage = document.getElementById("stage");
+const tooltip = document.getElementById("tooltip");
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+stage.prepend(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.domElement.className = "labels";
+stage.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = (() => {
+  const c = document.createElement("canvas");
+  c.width = c.height = 512;
+  const g = c.getContext("2d");
+  const grd = g.createRadialGradient(256, 210, 0, 256, 256, 360);
+  grd.addColorStop(0, "#141c2e");
+  grd.addColorStop(1, "#04060b");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 512, 512);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+})();
+const BASE_FOV = 38;
+const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 50);
+const HOME_POS = new THREE.Vector3(-3.3, 0.9, -0.5);
+const HOME_TARGET = new THREE.Vector3(0, -0.1, 0);
+camera.position.copy(HOME_POS);
+scene.add(camera);
+
+const controls = new OrbitControls(camera, labelRenderer.domElement);
+controls.target.copy(HOME_TARGET);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.minDistance = 1.4;
+controls.maxDistance = 7;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.9;
+
+scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x1a1f2e, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 0.9);
+key.position.set(-1, 1.5, 1);
+camera.add(key);
+const rim = new THREE.DirectionalLight(0xbcd4ff, 0.8);
+rim.position.set(3, 2, 3);
+scene.add(rim);
+
+const brain = new THREE.Group();
+scene.add(brain);
+
+// The glow pass renders off-screen, where the canvas's own anti-aliasing doesn't apply
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+composer.setPixelRatio(renderer.getPixelRatio());
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.4, 0.45);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ------------------------------------------------------------------
+// Procedural geometry
+// ------------------------------------------------------------------
+function hash(i, j, k) {
+  let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = x - xi, yf = y - yi, zf = z - zi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+  const l = (a, b, t) => a + (b - a) * t;
+  return l(
+    l(l(hash(xi, yi, zi), hash(xi + 1, yi, zi), u), l(hash(xi, yi + 1, zi), hash(xi + 1, yi + 1, zi), u), v),
+    l(l(hash(xi, yi, zi + 1), hash(xi + 1, yi, zi + 1), u), l(hash(xi, yi + 1, zi + 1), hash(xi + 1, yi + 1, zi + 1), u), v),
+    w);
+}
+// Smooth gradient (Perlin) noise for the cortex folds
+const PERM = (() => {
+  const p = Array.from({ length: 256 }, (_, i) => i);
+  let s = 1337;
+  for (let i = 255; i > 0; i--) {
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    const j = s % (i + 1);
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  return new Uint8Array([...p, ...p]);
+})();
+function perlin(x, y, z) {
+  const X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+  x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+  const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+  const grad = (h, x, y, z) => {
+    h &= 15;
+    const u = h < 8 ? x : y, v = h < 4 ? y : (h === 12 || h === 14 ? x : z);
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+  };
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const u = fade(x), v = fade(y), w = fade(z);
+  const A = PERM[X] + Y, AA = PERM[A] + Z, AB = PERM[A + 1] + Z;
+  const B = PERM[X + 1] + Y, BA = PERM[B] + Z, BB = PERM[B + 1] + Z;
+  return lerp(
+    lerp(lerp(grad(PERM[AA], x, y, z), grad(PERM[BA], x - 1, y, z), u),
+         lerp(grad(PERM[AB], x, y - 1, z), grad(PERM[BB], x - 1, y - 1, z), u), v),
+    lerp(lerp(grad(PERM[AA + 1], x, y, z - 1), grad(PERM[BA + 1], x - 1, y, z - 1), u),
+         lerp(grad(PERM[AB + 1], x, y - 1, z - 1), grad(PERM[BB + 1], x - 1, y - 1, z - 1), u), v), w);
+}
+function fbm(x, y, z, octaves = 3) {
+  let sum = 0, amp = 0.5, f = 1;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * perlin(x * f, y * f, z * f);
+    amp *= 0.5; f *= 2;
+  }
+  return sum;
+}
+
+// Gyri and sulci: the contour lines of a smooth noise field wind around like brain folds.
+// Returns 0 in the bottom of a groove (sulcus) and 1 on top of a ridge (gyrus).
+function gyrus(ux, uy, uz, seed) {
+  const wx = ux * 1.7 + seed, wy = uy * 2.0, wz = uz * 1.5;
+  // Domain warp makes the folds meander instead of forming neat rings
+  const n = fbm(wx + 0.35 * perlin(wx * 2, wy * 2, wz * 2 + 9), wy, wz);
+  return Math.pow(Math.abs(Math.sin(Math.PI * 8 * n)), 0.45);
+}
+
+// Which region a point on the unit hemisphere belongs to.
+// ux > 0 is lateral (outer side), uy is up, uz > 0 is the front.
+// Keep in sync with CLASSIFY_GLSL below, which draws the same borders per pixel.
+function classify(ux, uy, uz, side) {
+  const centralZ = 0.1 - 0.25 * uy + 0.03 * Math.sin(uy * 9);     // central sulcus
+  const sylvianY = -0.12 - 0.35 * uz + 0.025 * Math.sin(uz * 8);  // lateral (Sylvian) fissure
+  let lobe;
+  if (uz < -0.72) lobe = "occipital";
+  else if (uy < sylvianY && uz < 0.75) lobe = "temporal";
+  else if (uz > centralZ) lobe = "frontal";
+  else lobe = "parietal";
+
+  if (side < 0 && ux > 0.35) {           // language areas: left hemisphere only
+    if (lobe === "frontal" && ((uz - 0.44) / 0.14) ** 2 + ((uy - sylvianY - 0.11) / 0.11) ** 2 < 1) return "broca";
+    if (lobe === "temporal" && ((uz + 0.36) / 0.14) ** 2 + ((uy - sylvianY + 0.11) / 0.11) ** 2 < 1) return "wernicke";
+  }
+  if (lobe === "frontal" && uz < centralZ + 0.13) return "motor";
+  if (lobe === "parietal" && uz > centralZ - 0.13) return "somatosensory";
+  if (lobe === "frontal" && uz > 0.7) return "prefrontal";
+  return lobe;
+}
+
+// How strongly the grooves tilt the lighting (0 = flat painted look)
+const BUMP_STRENGTH = 2.5;
+
+const CORTEX_CODE = { frontal: 0, parietal: 1, temporal: 2, occipital: 3, prefrontal: 4, motor: 5, somatosensory: 6, broca: 7, wernicke: 8 };
+const CLASSIFY_GLSL = /* glsl */`
+int classifyRegion(vec3 u, float side) {
+  float centralZ = 0.1 - 0.25 * u.y + 0.03 * sin(u.y * 9.0);
+  float sylvianY = -0.12 - 0.35 * u.z + 0.025 * sin(u.z * 8.0);
+  int lobe;
+  if (u.z < -0.72) lobe = 3;
+  else if (u.y < sylvianY && u.z < 0.75) lobe = 2;
+  else if (u.z > centralZ) lobe = 0;
+  else lobe = 1;
+  if (side < 0.0 && u.x > 0.35) {
+    vec2 b = vec2((u.z - 0.44) / 0.14, (u.y - sylvianY - 0.11) / 0.11);
+    if (lobe == 0 && dot(b, b) < 1.0) return 7;
+    vec2 w = vec2((u.z + 0.36) / 0.14, (u.y - sylvianY + 0.11) / 0.11);
+    if (lobe == 2 && dot(w, w) < 1.0) return 8;
+  }
+  if (lobe == 0 && u.z < centralZ + 0.13) return 5;
+  if (lobe == 1 && u.z > centralZ - 0.13) return 6;
+  if (lobe == 0 && u.z > 0.7) return 4;
+  return lobe;
+}`;
+
+// The fold pattern, evaluated per pixel so it stays sharp at any zoom. This is the same noise
+// as gyrus() and the cerebellum folia above (the permutation table goes in as a texture),
+// so the shading lines up with the geometry that was displaced by the same function.
+const permTexture = (() => {
+  const tex = new THREE.DataTexture(PERM, 512, 1, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter;
+  tex.needsUpdate = true;
+  return tex;
+})();
+const FOLD_GLSL = /* glsl */`
+uniform sampler2D uPerm;
+uniform int uFoldMode;
+uniform float uSeed;
+int permAt(int i) { return int(texelFetch(uPerm, ivec2(i, 0), 0).r * 255.0 + 0.5); }
+float pfade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+float pgrad(int h, float x, float y, float z) {
+  h &= 15;
+  float u = h < 8 ? x : y;
+  float v = h < 4 ? y : ((h == 12 || h == 14) ? x : z);
+  return (((h & 1) != 0) ? -u : u) + (((h & 2) != 0) ? -v : v);
+}
+float perlin3(vec3 p) {
+  vec3 fl = floor(p);
+  ivec3 I = ivec3(fl) & ivec3(255);
+  vec3 f = p - fl;
+  float u = pfade(f.x), v = pfade(f.y), w = pfade(f.z);
+  int A = permAt(I.x) + I.y, AA = permAt(A) + I.z, AB = permAt(A + 1) + I.z;
+  int B = permAt(I.x + 1) + I.y, BA = permAt(B) + I.z, BB = permAt(B + 1) + I.z;
+  return mix(
+    mix(mix(pgrad(permAt(AA), f.x, f.y, f.z), pgrad(permAt(BA), f.x - 1.0, f.y, f.z), u),
+        mix(pgrad(permAt(AB), f.x, f.y - 1.0, f.z), pgrad(permAt(BB), f.x - 1.0, f.y - 1.0, f.z), u), v),
+    mix(mix(pgrad(permAt(AA + 1), f.x, f.y, f.z - 1.0), pgrad(permAt(BA + 1), f.x - 1.0, f.y, f.z - 1.0), u),
+        mix(pgrad(permAt(AB + 1), f.x, f.y - 1.0, f.z - 1.0), pgrad(permAt(BB + 1), f.x - 1.0, f.y - 1.0, f.z - 1.0), u), v), w);
+}
+float pfbm(vec3 p) {
+  float s = 0.0, amp = 0.5, f = 1.0;
+  for (int o = 0; o < 3; o++) { s += amp * perlin3(p * f); amp *= 0.5; f *= 2.0; }
+  return s;
+}
+// 1 on top of a ridge, 0 in the bottom of a groove
+float foldValue(vec3 dir, float rho) {
+  vec3 d = normalize(dir);
+  if (uFoldMode == 1) return pow(max(0.5 + 0.5 * sin(d.y * 48.0 + 2.5 * perlin3(d * 2.5)), 0.0), 0.5);
+  d *= rho;
+  float wx = d.x * 1.7 + uSeed, wy = d.y * 2.0, wz = d.z * 1.5;
+  float warp = 0.35 * perlin3(vec3(wx * 2.0, wy * 2.0, wz * 2.0 + 9.0));
+  return pow(abs(sin(3.14159265 * 8.0 * pfbm(vec3(wx + warp, wy, wz)))), 0.45);
+}`;
+
+// Extra surface shading, added to the standard material:
+// - clip: draws a thin glowing line along the region's border.
+// - fold: darkens the grooves (sulci), lets the ridges (gyri) glow, and tilts the lighting
+//   across each groove wall so the folds read as carved relief. { mode: 0 cortex, 1 cerebellum,
+//   seed, rho: true when the mesh supplies a per-vertex foldRho for sampling deeper into the pattern }
+function shadeMaterial(material, { clip, fold }) {
+  material.onBeforeCompile = shader => {
+    let vHead = "", vBody = "", fHead = "", fMain = "", fColor = "", fNormal = "", fEmissive = "";
+    if (fold || clip) {
+      vHead += "attribute vec3 unitPos;\nvarying vec3 vUnit;\n";
+      vBody += "vUnit = unitPos;\n";
+      fHead += "varying vec3 vUnit;\n";
+    }
+    if (fold) {
+      shader.uniforms.uPerm = { value: permTexture };
+      shader.uniforms.uFoldMode = { value: fold.mode };
+      shader.uniforms.uSeed = { value: fold.seed };
+      if (fold.rho) {
+        vHead += "attribute float foldRho;\nvarying float vRho;\n";
+        vBody += "vRho = foldRho;\n";
+        fHead += "varying float vRho;\n";
+      }
+      fHead += FOLD_GLSL + "\n";
+      // Taken before anything else, so the screen-space slopes below are valid everywhere
+      fMain += `float foldV = foldValue(vUnit, ${fold.rho ? "vRho" : "1.0"});\n`;
+      fColor += "diffuseColor.rgb *= mix(0.3, 1.0, foldV);\n";
+      fNormal += `{
+  vec3 sx = normalize(dFdx(-vViewPosition)), sy = normalize(dFdy(-vViewPosition));
+  vec3 r1 = cross(sy, normal), r2 = cross(normal, sx);
+  float det = dot(sx, r1) * faceDirection;
+  vec3 slope = sign(det) * (${BUMP_STRENGTH.toFixed(2)} * dFdx(foldV) * r1 + ${BUMP_STRENGTH.toFixed(2)} * dFdy(foldV) * r2);
+  normal = normalize(abs(det) * normal - slope);
+}\n`;
+      fEmissive += "totalEmissiveRadiance *= mix(0.12, 1.0, foldV * foldV);\n";
+    }
+    if (clip) {
+      shader.uniforms.uRegion = { value: CORTEX_CODE[clip.id] };
+      shader.uniforms.uSide = { value: clip.side };
+      fHead += `uniform int uRegion;\nuniform float uSide;\n${CLASSIFY_GLSL}\n`;
+      fMain += `
+  vec3 ux = dFdx(vUnit) * 1.5, uy = dFdy(vUnit) * 1.5;
+  bool edge = classifyRegion(normalize(vUnit), uSide) != uRegion
+           || classifyRegion(normalize(vUnit + ux), uSide) != uRegion
+           || classifyRegion(normalize(vUnit - ux), uSide) != uRegion
+           || classifyRegion(normalize(vUnit + uy), uSide) != uRegion
+           || classifyRegion(normalize(vUnit - uy), uSide) != uRegion;
+`;
+      fEmissive += "if (edge) totalEmissiveRadiance += vec3(0.45);\n";
+    }
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\n" + vHead)
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\n" + vBody);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\n" + fHead)
+      .replace("void main() {", "void main() {\n" + fMain)
+      .replace("#include <color_fragment>", "#include <color_fragment>\n" + fColor)
+      .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + fNormal)
+      .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n" + fEmissive);
+  };
+  // Materials share compiled shaders by default; these variants need their own
+  material.customProgramCacheKey = () => `brain-${!!clip}-${fold ? (fold.rho ? 2 : 1) : 0}`;
+}
+
+// Does vertex k of a cortex mesh really belong to that mesh's region?
+function ownsVertex(mesh, k) {
+  const u = mesh.geometry.attributes.unitPos;
+  if (!u) return true;
+  const v = new THREE.Vector3().fromBufferAttribute(u, k).normalize();
+  return classify(v.x, v.y, v.z, mesh.userData.side) === mesh.userData.id;
+}
+
+function buildHemisphere(side) {
+  let sphere = new THREE.SphereGeometry(1, 420, 300);
+  sphere.deleteAttribute("uv");
+  sphere.deleteAttribute("normal");
+  sphere = mergeVertices(sphere);
+
+  const src = sphere.attributes.position;
+  const n = src.count;
+  const pos = new Float32Array(n * 3);
+  const unit = new Float32Array(n * 3);
+  const inner = new Float32Array(n * 3);         // the same folded surface, sunk straight down by SLAB_DEPTH
+  const SLAB_DEPTH = 0.3;
+  const v = new THREE.Vector3();
+
+  // Turn a direction and radius into a point on the hemisphere's brain shape
+  const shapeInto = (out, i, ux, uy, uz, r) => {
+    let x = ux * r, y = uy * r, z = uz * r;
+    const taper = 1 - 0.14 * Math.max(0, uz) - 0.12 * Math.max(0, -uz) ** 2;
+    x = x > 0 ? x * 0.66 * taper : x * 0.07;     // flat inner (medial) face
+    const temporalBump = Math.exp(-((uz - 0.05) ** 2) / 0.15) * Math.min(1, Math.max(0, ux * 2));
+    y = y > 0 ? y * 0.74 : y * (0.42 + 0.22 * temporalBump);
+    out[i * 3] = side * (0.085 + x);
+    out[i * 3 + 1] = y + 0.08;
+    out[i * 3 + 2] = -z;                          // world front is -z
+  };
+
+  for (let i = 0; i < n; i++) {
+    v.fromBufferAttribute(src, i).normalize();
+    const ux = v.x, uy = v.y, uz = v.z;
+    unit[i * 3] = ux; unit[i * 3 + 1] = uy; unit[i * 3 + 2] = uz;
+
+    const g = gyrus(ux, uy, uz, side * 5.3);
+    const swell = 0.025 * fbm(ux * 0.9 + side * 2, uy * 0.9, uz * 0.9, 2);
+    const r = 1 + 0.055 * (g - 1) + swell;
+    shapeInto(pos, i, ux, uy, uz, r);
+    shapeInto(inner, i, ux, uy, uz, r - SLAB_DEPTH);
+  }
+
+  // z is mirrored once, and the left side is mirrored again: flip winding when the total is odd
+  const index = Array.from(sphere.index.array);
+  if (side > 0) for (let t = 0; t < index.length; t += 3) [index[t + 1], index[t + 2]] = [index[t + 2], index[t + 1]];
+
+  const full = new THREE.BufferGeometry();
+  full.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  full.setIndex(index);
+  full.computeVertexNormals();
+  const nrm = full.attributes.normal.array;
+
+  const vertexRegion = [];
+  for (let i = 0; i < n; i++) vertexRegion[i] = classify(unit[i * 3], unit[i * 3 + 1], unit[i * 3 + 2], side);
+
+  // Vertex records, so points made by cutting triangles carry every attribute
+  const vert = i => ({
+    p: [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]],
+    n: [nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]],
+    u: [unit[i * 3], unit[i * 3 + 1], unit[i * 3 + 2]],
+    q: [inner[i * 3], inner[i * 3 + 1], inner[i * 3 + 2]],
+  });
+  const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+  // Where along edge i-j region R starts or stops, found by bisection on the region map.
+  // Cached so neighbouring triangles share the exact same point (no cracks).
+  const crossings = new Map();
+  const probe = new THREE.Vector3();
+  function crossing(i, j, R) {
+    const [lo, hi] = i < j ? [i, j] : [j, i];
+    const key = `${lo}_${hi}_${R}`;
+    if (crossings.has(key)) return crossings.get(key);
+    const A = vert(lo), B = vert(hi);
+    const insideLo = vertexRegion[lo] === R;
+    let t0 = 0, t1 = 1;
+    for (let k = 0; k < 10; k++) {
+      const tm = (t0 + t1) / 2;
+      probe.fromArray(mix3(A.u, B.u, tm)).normalize();
+      if ((classify(probe.x, probe.y, probe.z, side) === R) === insideLo) t0 = tm; else t1 = tm;
+    }
+    const t = (t0 + t1) / 2;
+    const rec = { p: mix3(A.p, B.p, t), n: mix3(A.n, B.n, t), u: mix3(A.u, B.u, t), q: mix3(A.q, B.q, t) };
+    crossings.set(key, rec);
+    return rec;
+  }
+
+  // Cut every triangle along region borders, so each region's surface ends exactly at its border
+  const buckets = {};
+  const bucketOf = id => (buckets[id] ||= { p: [], q: [], n: [], u: [], border: [] });
+  const emit = (bk, ...vs) => {
+    for (const v of vs) { bk.p.push(...v.p); bk.q.push(...v.q); bk.n.push(...v.n); bk.u.push(...v.u); }
+  };
+  for (let t = 0; t < index.length; t += 3) {
+    const tri = [index[t], index[t + 1], index[t + 2]];
+    const ids = tri.map(i => vertexRegion[i]);
+    if (ids[0] === ids[1] && ids[1] === ids[2]) { emit(bucketOf(ids[0]), ...tri.map(vert)); continue; }
+
+    for (const R of new Set(ids)) {
+      const poly = [];
+      let exit = null, entry = null;
+      for (let k = 0; k < 3; k++) {
+        const i = tri[k], j = tri[(k + 1) % 3];
+        const inI = vertexRegion[i] === R, inJ = vertexRegion[j] === R;
+        if (inI) poly.push(vert(i));
+        if (inI !== inJ) {
+          const x = crossing(i, j, R);
+          poly.push(x);
+          if (inI) exit = x; else entry = x;
+        }
+      }
+      const bk = bucketOf(R);
+      for (let k = 1; k < poly.length - 1; k++) emit(bk, poly[0], poly[k], poly[k + 1]);
+      // Stored entry-then-exit so every wall faces out of its wedge
+      if (exit && entry) bk.border.push(entry, exit);
+    }
+    // Where three regions meet inside one triangle, a sliver is left in the middle
+    if (new Set(ids).size === 3) {
+      const xs = [crossing(tri[0], tri[1], ids[0]), crossing(tri[1], tri[2], ids[1]), crossing(tri[2], tri[0], ids[2])];
+      const c = mix3(mix3(xs[0].u, xs[1].u, 0.5), xs[2].u, 1 / 3);
+      probe.fromArray(c).normalize();
+      emit(bucketOf(classify(probe.x, probe.y, probe.z, side)), ...xs);
+    }
+  }
+
+  // Solid filling, so pieces are slabs instead of hollow shells when pulled out:
+  // - an underside that copies the folded surface, sunk straight down, with the same fold texture
+  // - walls that drop straight down from each border point to its copy on the underside
+  for (const [id, b] of Object.entries(buckets)) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(b.p, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(b.n, 3));
+    geo.setAttribute("unitPos", new THREE.Float32BufferAttribute(b.u, 3));
+
+    // Smooth normals: each border point averages the walls that meet there
+    const pointNormal = new Map();
+    const faces = [];
+    const a = new THREE.Vector3(), c = new THREE.Vector3(), d = new THREE.Vector3();
+    for (let k = 0; k < b.border.length; k += 2) {
+      const A = b.border[k], B = b.border[k + 1];
+      const fn = c.fromArray(B.p).sub(a.fromArray(A.p)).cross(d.fromArray(B.q).sub(a));
+      if (fn.lengthSq() < 1e-14) continue;
+      fn.normalize();
+      for (const P of [A, B]) {
+        if (!pointNormal.has(P)) pointNormal.set(P, new THREE.Vector3());
+        pointNormal.get(P).add(fn);
+      }
+      faces.push([A, B]);
+    }
+    for (const nv of pointNormal.values()) nv.normalize();
+
+    // Underside first: same triangles, same normals and fold directions, lowered
+    const fp = [...b.q], fnrm = [...b.n], fu = [...b.u], fr = new Array(b.u.length / 3).fill(1);
+    // Walls carry the same fold pattern as the surface. Copying one value straight down would
+    // streak them with vertical stripes, so the wall is cut into rows and each row samples the
+    // pattern at a slightly shrunken position (foldRho): a slice through the fold field, with
+    // winding bands in both directions. The shrink eases back to none at the top and bottom,
+    // so the wall joins the surface and the underside without a seam.
+    const WALL_ROWS = 14;
+    const vertex = (P, row) => {
+      const nv = pointNormal.get(P);
+      fp.push(...mix3(P.p, P.q, row / WALL_ROWS));
+      fnrm.push(nv.x, nv.y, nv.z);
+      fu.push(...P.u);
+      fr.push(1 - 0.3 * Math.sin(Math.PI * (row / WALL_ROWS) ** 0.7));
+    };
+    for (const [A, B] of faces) {
+      for (let row = 0; row < WALL_ROWS; row++) {
+        vertex(A, row); vertex(B, row); vertex(B, row + 1);     // one strip of wall: two triangles
+        vertex(A, row); vertex(B, row + 1); vertex(A, row + 1);
+      }
+    }
+    const fill = new THREE.BufferGeometry();
+    fill.setAttribute("position", new THREE.Float32BufferAttribute(fp, 3));
+    fill.setAttribute("normal", new THREE.Float32BufferAttribute(fnrm, 3));
+    fill.setAttribute("unitPos", new THREE.Float32BufferAttribute(fu, 3));
+    fill.setAttribute("foldRho", new THREE.Float32BufferAttribute(fr, 1));
+
+    addMesh(id, geo, { kind: "cortex", side, fill });
+  }
+}
+
+// Bumpy ellipsoid, baked into place so mesh.position stays free for the explode animation
+function blob(id, scale, at, opts = {}) {
+  const g = new THREE.SphereGeometry(1, 64, 48);
+  const p = g.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const r = 1 + (opts.bump ?? 0.05) * (vnoise(v.x * 3 + at[0] * 9, v.y * 3, v.z * 3) - 0.5);
+    p.setXYZ(i, v.x * r * scale[0] + at[0], v.y * r * scale[1] + at[1], v.z * r * scale[2] + at[2]);
+  }
+  g.computeVertexNormals();
+  return addMesh(id, g, opts);
+}
+
+function tube(id, points, radius, opts = {}) {
+  const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
+  const g = new THREE.TubeGeometry(curve, 64, radius, 20, false);
+  if (opts.flatten) g.scale(opts.flatten, 1, 1);
+  addMesh(id, g, opts);
+  for (const end of [points[0], points[points.length - 1]]) {
+    blob(id, [radius * (opts.flatten || 1), radius, radius], end, { ...opts, bump: 0, noLabel: true });
+  }
+}
+
+function buildCerebellum() {
+  const g = new THREE.SphereGeometry(1, 240, 220);
+  const p = g.attributes.position;
+  const v = new THREE.Vector3();
+  const units = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    units.set([v.x, v.y, v.z], i * 3);
+    // Thin parallel folds (folia) with narrow grooves between them
+    const folia = Math.pow(0.5 + 0.5 * Math.sin(v.y * 48 + 2.5 * perlin(v.x * 2.5, v.y * 2.5, v.z * 2.5)), 0.5);
+    const vermis = 0.1 * Math.exp(-(v.x * v.x) / 0.008) * Math.max(0, v.z);
+    const r = 1 + 0.045 * (folia - 1) - vermis;
+    const z = v.z * r * (v.z < 0 ? 0.25 : 0.42);
+    p.setXYZ(i, v.x * r * 0.6, v.y * r * 0.3 - 0.42, z + 0.62);
+  }
+  g.setAttribute("unitPos", new THREE.BufferAttribute(units, 3));
+  g.computeVertexNormals();
+  addMesh("cerebellum", g, { kind: "cerebellum" });
+}
+
+function buildBrainstem() {
+  blob("midbrain", [0.13, 0.12, 0.13], [0, -0.2, 0.15], { kind: "stem" });
+  blob("pons", [0.17, 0.15, 0.15], [0, -0.42, 0.1], { kind: "stem", bump: 0.08 });
+  const med = new THREE.CapsuleGeometry(0.085, 0.32, 12, 32);
+  med.scale(1.15, 1, 1);
+  med.rotateX(-0.25);
+  med.translate(0, -0.74, 0.19);
+  addMesh("medulla", med, { kind: "stem" });
+}
+
+function buildDeep() {
+  tube("corpus-callosum",
+    [[0, -0.04, -0.48], [0, 0.14, -0.42], [0, 0.24, -0.12], [0, 0.24, 0.18], [0, 0.15, 0.42], [0, 0.0, 0.46]],
+    0.045, { kind: "deep", flatten: 4.5 });
+  for (const s of [-1, 1]) {
+    blob("thalamus", [0.1, 0.08, 0.15], [s * 0.1, 0.0, 0.08], { kind: "deep", noLabel: s > 0 });
+    blob("basal-ganglia", [0.08, 0.14, 0.22], [s * 0.27, 0.03, -0.03], { kind: "deep", noLabel: s > 0 });
+    tube("hippocampus", [[s * 0.39, -0.27, -0.12], [s * 0.38, -0.22, 0.12], [s * 0.32, -0.09, 0.3]], 0.045, { kind: "deep", noLabel: s > 0 });
+    blob("amygdala", [0.06, 0.06, 0.065], [s * 0.38, -0.27, -0.22], { kind: "deep", noLabel: s > 0 });
+  }
+  blob("hypothalamus", [0.07, 0.05, 0.07], [0, -0.12, -0.08], { kind: "deep" });
+  blob("pituitary", [0.05, 0.04, 0.05], [0, -0.31, -0.15], { kind: "deep", bump: 0 });
+  const stalk = new THREE.CylinderGeometry(0.012, 0.016, 0.16, 12);
+  stalk.translate(0, -0.22, -0.12);
+  addMesh("pituitary", stalk, { kind: "deep", noLabel: true });
+}
+
+// ------------------------------------------------------------------
+// Mesh bookkeeping
+// ------------------------------------------------------------------
+const meshes = [];
+const byId = {};
+
+function addMesh(id, geometry, opts = {}) {
+  geometry.computeBoundingBox();
+  const center = geometry.boundingBox.getCenter(new THREE.Vector3());
+  const color = new THREE.Color(COLORS[id]);
+  // Dark surface lit mostly by its own glow keeps the colors saturated
+  const mat = new THREE.MeshStandardMaterial({
+    color: color.clone().multiplyScalar(0.4), emissive: color, emissiveIntensity: 0,
+    roughness: 0.55, metalness: 0.1, transparent: true,
+    side: opts.kind === "cortex" ? THREE.DoubleSide : THREE.FrontSide,
+  });
+  const mesh = new THREE.Mesh(geometry, mat);
+  const kind = opts.kind || "deep";
+  shadeMaterial(mat, {
+    clip: kind === "cortex" ? { id, side: opts.side } : null,
+    fold: geometry.attributes.unitPos ? { mode: kind === "cerebellum" ? 1 : 0, seed: (opts.side || 0) * 5.3 } : null,
+  });
+  geometry.computeBoundsTree();
+
+  // Explode direction: outward from the middle; hemispheres also pull apart sideways
+  const dir = center.clone();
+  if (kind === "cortex") dir.x += (opts.side || 0) * 0.6;
+  if (kind === "cerebellum") dir.set(0, -0.6, 1);
+  if (kind === "stem") dir.set(0, -1, 0.15);
+  dir.normalize();
+  const dist = { cortex: 0.38, cerebellum: 0.45, stem: 0.4, deep: 0.12 }[kind];
+
+  // Full-color and grey versions, blended between when something else is selected
+  const grey = c => { const hsl = c.getHSL({}); return new THREE.Color().setHSL(hsl.h, 0, hsl.l * 0.8); };
+  const colors = {
+    base: mat.color.clone(), baseGlow: mat.emissive.clone(),
+    grey: grey(mat.color), greyGlow: grey(mat.emissive).multiplyScalar(0.45),
+  };
+
+  mesh.userData = { id, kind, side: opts.side || 0, center, dir, dist, opacity: 1, glow: 0, pull: 0, pullDir: dir.clone(), colors, sat: 1 };
+  meshes.push(mesh);
+  (byId[id] ||= []).push(mesh);
+  brain.add(mesh);
+  if (opts.fill) {
+    // Same material as the exterior (color, glow, groove shading), seen from both sides
+    const fillMat = new THREE.MeshStandardMaterial({
+      color: mat.color, emissive: mat.emissive,
+      roughness: mat.roughness, metalness: mat.metalness, transparent: true, side: THREE.DoubleSide,
+    });
+    shadeMaterial(fillMat, { clip: null, fold: { mode: 0, seed: (opts.side || 0) * 5.3, rho: true } });
+    const fill = new THREE.Mesh(opts.fill, fillMat);
+    opts.fill.computeBoundsTree();
+    fill.userData = { id, kind: "fill", opacity: 1 };
+    mesh.add(fill);
+    mesh.userData.fill = fill;
+  }
+  if (!opts.noLabel) addLabel(mesh);
+  return mesh;
+}
+
+function addLabel(mesh) {
+  const { id, kind, center } = mesh.userData;
+  // A cortex label of a region that already has one on this hemisphere would duplicate it
+  if (kind !== "cortex" && byId[id].some(m => m !== mesh && m.userData.label)) return;
+  const r = REGIONS[id];
+  const el = document.createElement("div");
+  el.className = "label3d";
+  el.textContent = r.short || r.name.replace(/ Lobe$/, "");
+  const label = new CSS2DObject(el);
+
+  let anchor = center.clone(), normal = null;
+  if (kind === "cortex") {
+    // Pick the surface vertex that points most directly outward from the patch center
+    const p = mesh.geometry.attributes.position, nAttr = mesh.geometry.attributes.normal;
+    const want = center.clone().normalize();
+    const v = new THREE.Vector3();
+    let best = -Infinity;
+    for (let i = 0; i < p.count; i += 3) {
+      if (!ownsVertex(mesh, i)) continue;
+      v.fromBufferAttribute(p, i);
+      const d = v.clone().normalize().dot(want);
+      if (d > best) { best = d; anchor.copy(v); normal = new THREE.Vector3().fromBufferAttribute(nAttr, i); }
+    }
+    anchor.addScaledVector(normal, 0.03);
+  }
+  label.position.copy(anchor);
+  mesh.add(label);
+  mesh.userData.label = label;
+  mesh.userData.labelNormal = normal;
+}
+
+buildHemisphere(-1);
+buildHemisphere(1);
+buildCerebellum();
+buildBrainstem();
+buildDeep();
+document.getElementById("loading").remove();
+
+// ------------------------------------------------------------------
+// Sparks: twinkling "neuron firing" points on the selected region
+// ------------------------------------------------------------------
+const sparkTexture = (() => {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, "rgba(255,255,255,1)");
+  grd.addColorStop(0.3, "rgba(255,255,255,.6)");
+  grd.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+
+let sparks = [];
+function clearSparks() {
+  for (const s of sparks) { s.points.parent.remove(s.points); s.points.geometry.dispose(); }
+  sparks = [];
+}
+function makeSparks(mesh) {
+  const p = mesh.geometry.attributes.position, nAttr = mesh.geometry.attributes.normal;
+  const count = Math.min(220, Math.floor(p.count / 3));
+  const positions = new Float32Array(count * 3), colors = new Float32Array(count * 3);
+  const phase = new Float32Array(count), speed = new Float32Array(count);
+  const v = new THREE.Vector3(), nv = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    let k, tries = 0;
+    do { k = Math.floor(Math.random() * p.count); } while (!ownsVertex(mesh, k) && ++tries < 20);
+    v.fromBufferAttribute(p, k);
+    nv.fromBufferAttribute(nAttr, k);
+    v.addScaledVector(nv, 0.015);
+    positions.set([v.x, v.y, v.z], i * 3);
+    phase[i] = Math.random() * Math.PI * 2;
+    speed[i] = 1.5 + Math.random() * 3;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const points = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: 0.05, map: sparkTexture, vertexColors: true, transparent: true,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  mesh.add(points);
+  sparks.push({ points, phase, speed, tint: new THREE.Color(COLORS[mesh.userData.id]).lerp(new THREE.Color(1, 1, 1), 0.5) });
+}
+function updateSparks(t) {
+  for (const s of sparks) {
+    const c = s.points.geometry.attributes.color;
+    for (let i = 0; i < s.phase.length; i++) {
+      const b = Math.max(0, Math.sin(t * s.speed[i] + s.phase[i])) ** 6;
+      c.setXYZ(i, s.tint.r * b, s.tint.g * b, s.tint.b * b);
+    }
+    c.needsUpdate = true;
+  }
+}
+
+// ------------------------------------------------------------------
+// State
+// ------------------------------------------------------------------
+let selected = null, hovered = null;
+let xrayOn = false, explodeOn = false, labelsOn = true;
+let explodeK = 0;
+let matches = null;
+const clock = new THREE.Clock();
+let fly = null;
+let introStart = null;
+
+const ease = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const easeOutBack = k => 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
+
+function flyTo(target, camPos, dur = 1.3) {
+  fly = { start: clock.elapsedTime, dur, fromCam: camera.position.clone(), toCam: camPos, fromT: controls.target.clone(), toT: target };
+  controls.enabled = false;
+}
+
+// How far a selected part slides out of the brain
+const PULL = { cortex: 0.32, cerebellum: 0.35, stem: 0.3, deep: 0.45 };
+
+// Where a mesh will come to rest: explode offset plus pull-out if it's selected
+function restingOffset(m) {
+  const ud = m.userData;
+  const off = ud.dir.clone().multiplyScalar(explodeOn ? ud.dist : 0);
+  if (ud.id === selected) off.addScaledVector(ud.pullDir, PULL[ud.kind]);
+  return off;
+}
+
+function regionFocus(id) {
+  // For a region on both hemispheres, use the copy on the side the camera is on
+  const list = byId[id];
+  const camLocal = brain.worldToLocal(camera.position.clone());
+  const centerOf = m => m.userData.center.clone().add(restingOffset(m));
+  if (!REGIONS[id].deep) {
+    const m = list.filter(m => m.userData.label).sort((a, b) => centerOf(a).distanceTo(camLocal) - centerOf(b).distanceTo(camLocal))[0] || list[0];
+    const c = centerOf(m);
+    const dir = c.clone().normalize();
+    if (m.userData.kind === "stem") dir.set(0, -0.2, -1).normalize();
+    return { target: brain.localToWorld(c.clone()), camPos: brain.localToWorld(c.clone().addScaledVector(dir, 2.4)) };
+  }
+  const box = new THREE.Box3();
+  for (const m of list) box.union(m.geometry.boundingBox.clone().translate(restingOffset(m)));
+  const c = brain.localToWorld(box.getCenter(new THREE.Vector3()));
+  const dir = camera.position.clone().sub(c).normalize();
+  return { target: c, camPos: c.clone().addScaledVector(dir, 2.7) };
+}
+
+function select(id, { move = true } = {}) {
+  selected = id;
+  clearSparks();
+  if (id) {
+    // Surface parts slide straight outward; hidden parts float toward the viewer
+    const camLocal = brain.worldToLocal(camera.position.clone());
+    const deepCenter = new THREE.Vector3();
+    if (REGIONS[id].deep) {
+      for (const m of byId[id]) deepCenter.add(m.userData.center);
+      deepCenter.divideScalar(byId[id].length);
+    }
+    for (const m of byId[id]) {
+      const ud = m.userData;
+      if (REGIONS[id].deep) ud.pullDir.copy(camLocal).sub(deepCenter).normalize();
+      else ud.pullDir.copy(ud.dir);
+    }
+    for (const m of byId[id]) if (m.userData.dist && m.geometry.attributes.position.count > 60) makeSparks(m);
+    if (move) {
+      const f = regionFocus(id);
+      flyTo(f.target, f.camPos);
+    }
+    setSpin(false);
+  }
+  renderInfo(id);
+  renderList();
+  // On a phone the info panel sits below the brain; bring it up if it would be off-screen
+  if (id && matchMedia("(max-width: 900px)").matches) {
+    const top = info.getBoundingClientRect().top;
+    if (top > innerHeight - 160) window.scrollBy({ top: top - (stage.offsetHeight + 12), behavior: "smooth" });
+  }
+}
+
+function setSpin(on) {
+  controls.autoRotate = on;
+  document.getElementById("btn-spin").setAttribute("aria-pressed", on);
+}
+
+// ------------------------------------------------------------------
+// Picking
+// ------------------------------------------------------------------
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const probe2 = new THREE.Vector2();
+let pointerInside = false, lastClient = { x: 0, y: 0 };
+const el = labelRenderer.domElement;
+
+const toNdc = (out, clientX, clientY) => {
+  const r = el.getBoundingClientRect();
+  return out.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+};
+
+// The region under a screen point. A fingertip covers far more than one pixel, so for touch
+// the search widens in two rings around the tap, nearest first, until it finds a region.
+function regionAt(clientX, clientY, slopPx = 0) {
+  const offsets = [[0, 0]];
+  if (slopPx) {
+    for (const ring of [0.5, 1]) {
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4;
+        offsets.push([Math.cos(a) * slopPx * ring, Math.sin(a) * slopPx * ring]);
+      }
+    }
+  }
+  for (const [dx, dy] of offsets) {
+    raycaster.setFromCamera(toNdc(probe2, clientX + dx, clientY + dy), camera);
+    const hit = raycaster.intersectObjects(pickTargets, false)[0];
+    if (hit) return hit.object.userData.id;
+  }
+  return null;
+}
+
+el.addEventListener("pointermove", e => {
+  if (e.pointerType === "touch") return;     // fingers have no hover, only taps and drags
+  toNdc(pointer, e.clientX, e.clientY);
+  lastClient = { x: e.clientX, y: e.clientY };
+  pointerInside = true;
+});
+el.addEventListener("pointerleave", () => { pointerInside = false; hovered = null; tooltip.style.opacity = 0; });
+
+// A tap is a press and release that barely moves, with no second finger joining in (a pinch).
+// What's under the pointer is looked up at the moment of release: a tap sends no move event
+// beforehand, so there is no hover state to rely on.
+const downPointers = new Set();
+let tap = null;
+el.addEventListener("pointerdown", e => {
+  downPointers.add(e.pointerId);
+  tap = downPointers.size === 1 ? { x: e.clientX, y: e.clientY } : null;
+});
+el.addEventListener("pointerup", e => {
+  downPointers.delete(e.pointerId);
+  const t = tap;
+  tap = null;
+  if (!t) return;
+  const touch = e.pointerType === "touch";
+  if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > (touch ? 12 : 5)) return;
+  // Click a region to select it; click it again, or click empty space, to deselect
+  const id = regionAt(e.clientX, e.clientY, touch ? 18 : 0);
+  select(id && id !== selected ? id : null);
+});
+el.addEventListener("pointercancel", e => { downPointers.delete(e.pointerId); tap = null; });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && selected) select(null);
+});
+controls.addEventListener("start", () => setSpin(false));
+
+function pick() {
+  if (!pointerInside) return;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(pickTargets, false)[0];
+  hovered = hit ? hit.object.userData.id : null;
+  el.style.cursor = hovered ? "pointer" : "grab";
+  if (hovered) {
+    tooltip.textContent = REGIONS[hovered].name;
+    tooltip.style.left = lastClient.x + "px";
+    tooltip.style.top = lastClient.y + "px";
+    tooltip.style.opacity = 1;
+  } else {
+    tooltip.style.opacity = 0;
+  }
+}
+
+// ------------------------------------------------------------------
+// Animation loop
+// ------------------------------------------------------------------
+const tmpV = new THREE.Vector3(), tmpN = new THREE.Vector3();
+const occluder = new THREE.Raycaster();
+let frame = 0, pickTargets = [];
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // Intro: grow and swing into place
+  if (introStart === null) introStart = t;
+  const ik = Math.min(1, (t - introStart) / 1.8);
+  brain.scale.setScalar(Math.max(0.001, easeOutBack(ik)));
+  brain.rotation.y = (1 - ease(ik)) * -2.2;
+
+  if (fly) {
+    const k = ease(Math.min(1, (t - fly.start) / fly.dur));
+    camera.position.lerpVectors(fly.fromCam, fly.toCam, k);
+    controls.target.lerpVectors(fly.fromT, fly.toT, k);
+    if (k >= 1) { fly = null; controls.enabled = true; }
+  }
+  controls.update();
+
+  frame++;
+  pickTargets = [];
+  for (const m of meshes) {
+    if (m.visible && m.userData.opacity > 0.4) pickTargets.push(m);
+    const fill = m.userData.fill;
+    if (fill && fill.visible && fill.userData.opacity > 0.4) pickTargets.push(fill);
+  }
+  explodeK += ((explodeOn ? 1 : 0) - explodeK) * 0.08;
+  const xray = xrayOn || (selected && REGIONS[selected].deep);
+
+  for (const m of meshes) {
+    const ud = m.userData;
+    let op = 1;
+    if (xray && ud.kind === "cortex") op = 0.1;
+    if (xray && ud.kind === "cerebellum") op = 0.35;
+    if (matches && !matches.has(ud.id)) op = Math.min(op, 0.15);
+    ud.opacity += (op - ud.opacity) * 0.1;
+    m.material.opacity = ud.opacity;
+    m.material.depthWrite = ud.opacity > 0.95;
+    m.visible = ud.opacity > 0.02;
+
+    let glow = 0.25;
+    if (ud.id === hovered) glow = 0.42;
+    if (ud.id === selected) glow = 0.4 + 0.2 * (0.5 + 0.5 * Math.sin(t * 3.5));
+    if (matches && matches.has(ud.id)) glow = Math.max(glow, 0.4 + 0.1 * Math.sin(t * 3));
+    ud.glow += (glow - ud.glow) * 0.18;
+    m.material.emissiveIntensity = ud.glow;
+
+    // Only the selected part (and whatever is under the pointer) keeps its color
+    const sat = !selected || ud.id === selected || ud.id === hovered ? 1 : 0;
+    ud.sat += (sat - ud.sat) * 0.1;
+    m.material.color.lerpColors(ud.colors.grey, ud.colors.base, ud.sat);
+    m.material.emissive.lerpColors(ud.colors.greyGlow, ud.colors.baseGlow, ud.sat);
+
+    // Solid filling follows its surface, but disappears in X-ray so the inside stays visible
+    if (ud.fill) {
+      const fill = ud.fill, fud = fill.userData;
+      fud.opacity += ((xray ? 0 : op) - fud.opacity) * 0.1;
+      fill.material.opacity = fud.opacity;
+      fill.material.depthWrite = fud.opacity > 0.95;
+      fill.visible = fud.opacity > 0.02;
+      fill.material.color.copy(m.material.color);
+      fill.material.emissive.copy(m.material.emissive);
+      fill.material.emissiveIntensity = m.material.emissiveIntensity;
+    }
+
+    // Ease the selected part out (with a gentle bob) and everything else back in
+    ud.pull += ((ud.id === selected ? 1 : 0) - ud.pull) * 0.08;
+    m.position.copy(ud.dir).multiplyScalar(explodeK * ud.dist);
+    if (ud.pull > 0.001) m.position.addScaledVector(ud.pullDir, ud.pull * (PULL[ud.kind] + 0.02 * Math.sin(t * 2.2)));
+
+    if (ud.label) {
+      let show = labelsOn && ud.opacity > 0.5 && (ud.kind !== "deep" || xray);
+      if (show && ud.labelNormal) {
+        // Hide labels on the far side of the brain
+        m.localToWorld(tmpV.copy(ud.label.position));
+        tmpN.copy(ud.labelNormal).applyQuaternion(brain.quaternion);
+        show = tmpN.dot(camera.position.clone().sub(tmpV).normalize()) > 0.2;
+      }
+      if (show) {
+        // Hide labels when another piece is in front of them (checked every few frames)
+        if (frame % 6 === 0) {
+          m.localToWorld(tmpV.copy(ud.label.position));
+          const dist = tmpV.distanceTo(camera.position);
+          occluder.set(camera.position, tmpV.clone().sub(camera.position).normalize());
+          occluder.far = dist;
+          const hit = occluder.intersectObjects(pickTargets, false)
+            .find(h => h.object !== m && h.object !== ud.fill);
+          // A cortex piece from the other hemisphere shares the id but still blocks the view
+          ud.occluded = !!hit && hit.distance < dist - 0.05 && (ud.kind === "cortex" || hit.object.userData.id !== ud.id);
+        }
+        show = !ud.occluded;
+      }
+      ud.label.visible = show;
+    }
+  }
+
+  updateSparks(t);
+  pick();
+  composer.render();
+  labelRenderer.render(scene, camera);
+}
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  labelRenderer.setSize(w, h);
+  camera.aspect = w / h;
+  // On a tall, narrow screen widen the view so the whole brain still fits across
+  const tanHalf = Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2));
+  camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(tanHalf * Math.max(1, 1 / camera.aspect)));
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+animate();
+
+// ------------------------------------------------------------------
+// UI
+// ------------------------------------------------------------------
+const TOUCH = matchMedia("(pointer: coarse)").matches;
+const info = document.getElementById("info");
+const listEl = document.getElementById("list");
+
+function renderInfo(id) {
+  info.classList.remove("enter");
+  void info.offsetWidth;
+  info.classList.add("enter");
+  if (!id) {
+    info.innerHTML = `
+      <div class="welcome">
+        <h2>Welcome!</h2>
+        <p>${TOUCH
+          ? "Drag to spin the brain, pinch to zoom, and <strong>tap</strong> any region to learn what it does."
+          : "Drag to spin the brain, scroll to zoom, and <strong>click</strong> any region to learn what it does."}</p>
+        <p>Turn on <strong>X-ray</strong> to see the parts hidden deep inside, or <strong>Explode</strong> to pull the brain apart.</p>
+        <p>${TOUCH
+          ? "Tap a selected region again, or tap empty space, to deselect."
+          : "Click a selected region again, click empty space, or press <strong>Esc</strong> to deselect."}</p>
+        <p class="muted">Try searching for “memory”, “fear” or “balance”.</p>
+      </div>`;
+    return;
+  }
+  const r = REGIONS[id];
+  info.innerHTML = `
+    <button class="close" data-deselect aria-label="Deselect ${r.name}" title="Deselect (Esc)">×</button>
+    <h2>${r.name}</h2>
+    <span class="chip" style="background:${COLORS[id]}">${r.group}</span>
+    <p class="summary">${r.summary}</p>
+    <h3>What it does</h3>
+    <ul>${r.functions.map(f => `<li>${f}</li>`).join("")}</ul>
+    <h3>If it's damaged</h3>
+    <p>${r.ifDamaged}</p>
+    <h3>Fun fact</h3>
+    <p>${r.funFact}</p>
+    ${r.deep ? `<div class="note">This part is hidden inside the brain, so X-ray mode turns on while it's selected.</div>` : ""}
+    <h3>Related regions</h3>
+    <div class="related">${r.related.map(rid => `<button data-goto="${rid}">${REGIONS[rid].name}</button>`).join("")}</div>`;
+}
+
+function renderList() {
+  const btn = id => `<button data-goto="${id}" class="${id === selected ? "current" : ""}"><span class="dot" style="background:${COLORS[id]}"></span>${REGIONS[id].name}</button>`;
+  const ids = Object.keys(REGIONS);
+  listEl.innerHTML = `
+    <h3>On the surface</h3>
+    <div class="items">${ids.filter(id => !REGIONS[id].deep).map(btn).join("")}</div>
+    <h3>Hidden inside</h3>
+    <div class="items">${ids.filter(id => REGIONS[id].deep).map(btn).join("")}</div>`;
+}
+
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-goto]");
+  if (go) select(go.dataset.goto);
+  if (e.target.closest("[data-deselect]")) select(null);
+});
+
+function toggle(btnId, fn) {
+  const b = document.getElementById(btnId);
+  b.addEventListener("click", () => {
+    const on = b.getAttribute("aria-pressed") !== "true";
+    b.setAttribute("aria-pressed", on);
+    fn(on);
+  });
+}
+toggle("btn-xray", on => { xrayOn = on; });
+toggle("btn-explode", on => { explodeOn = on; });
+toggle("btn-labels", on => { labelsOn = on; });
+toggle("btn-spin", on => { controls.autoRotate = on; });
+document.getElementById("btn-reset").addEventListener("click", () => {
+  flyTo(HOME_TARGET.clone(), HOME_POS.clone());
+  setSpin(true);
+});
+
+document.getElementById("search").addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase();
+  matches = q ? new Set(Object.keys(REGIONS).filter(id => {
+    const r = REGIONS[id];
+    return [r.name, r.summary, ...r.functions].join(" ").toLowerCase().includes(q);
+  })) : null;
+});
+
+if (TOUCH) stage.querySelector(".hint").textContent = "Drag to rotate · Pinch to zoom · Tap a region";
+
+renderInfo(null);
+renderList();
+</script>
+</body>
+</html>
